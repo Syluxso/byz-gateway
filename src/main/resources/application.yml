@@ -1,0 +1,79 @@
+spring:
+  application:
+    name: byz-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  cloud:
+    gateway:
+      default-filters:
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter.replenishRate: ${byz.gateway.rate-limit.replenish-rate:40}
+            redis-rate-limiter.burstCapacity: ${byz.gateway.rate-limit.burst-capacity:80}
+            key-resolver: "#{@byzKeyResolver}"
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+            exposedHeaders: "X-Request-Id"
+            allowCredentials: false
+      routes:
+        - id: iam
+          uri: ${BYZ_IAM_URI:http://127.0.0.1:8082}
+          predicates:
+            - Path=/iam/**
+          filters:
+            - StripPrefix=1
+        - id: notifications
+          uri: ${BYZ_NOTIFICATIONS_URI:http://127.0.0.1:8081}
+          predicates:
+            - Path=/notifications/**
+          filters:
+            - StripPrefix=1
+        - id: directory
+          uri: ${BYZ_DIRECTORY_URI:http://127.0.0.1:8086}
+          predicates:
+            - Path=/directory/**
+          filters:
+            - StripPrefix=1
+        - id: events
+          uri: ${BYZ_EVENTS_URI:http://127.0.0.1:8088}
+          predicates:
+            - Path=/events/**
+          filters:
+            - StripPrefix=1
+        - id: files
+          uri: ${BYZ_FILES_URI:http://127.0.0.1:8089}
+          predicates:
+            - Path=/files/**
+          filters:
+            - StripPrefix=1
+
+server:
+  port: ${PORT:8096}
+
+byz:
+  gateway:
+    rate-limit:
+      replenish-rate: ${RATE_LIMIT_REPLENISH:40}
+      burst-capacity: ${RATE_LIMIT_BURST:80}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,gateway
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+
+logging:
+  pattern:
+    console: '{"time":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","service":"byz-gateway","logger":"%logger{36}","msg":"%msg"}%n'
