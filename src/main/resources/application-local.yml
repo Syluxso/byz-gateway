@@ -3,6 +3,12 @@ spring:
     redis:
       host: 127.0.0.1
       port: 6379
+  kafka:
+    bootstrap-servers: localhost:9092
 
 server:
   port: 8096
+
+byz:
+  kafka:
+    enabled: true

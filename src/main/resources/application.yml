@@ -6,6 +6,18 @@ spring:
       host: ${REDIS_HOST:127.0.0.1}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: "1"
+      properties:
+        max.block.ms: 1000
+        linger.ms: 5
+        retries: 1
+    admin:
+      fail-fast: false
   cloud:
     gateway:
       default-filters:
@@ -62,6 +74,10 @@ byz:
     rate-limit:
       replenish-rate: ${RATE_LIMIT_REPLENISH:40}
       burst-capacity: ${RATE_LIMIT_BURST:80}
+  kafka:
+    enabled: ${BYZ_KAFKA_ENABLED:true}
+    topics:
+      gateway-access: byz.gateway.access
 
 management:
   endpoints:
@@ -73,6 +89,10 @@ management:
       show-details: always
     gateway:
       enabled: true
+  health:
+    # Kafka is best-effort for access logs — do not mark the gateway DOWN if the broker is off.
+    kafka:
+      enabled: false
 
 logging:
   pattern:
