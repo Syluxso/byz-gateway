@@ -11,11 +11,14 @@ import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
 /**
- * Handle CORS preflight before Spring Cloud Gateway {@code CorsWebFilter}.
- * That filter uses {@code Ordered.HIGHEST_PRECEDENCE} and was returning 403 on
- * OPTIONS when {@code globalcors} rejected the request — GlobalFilters never ran.
+ * Gateway-wide CORS for browsers (Admin health probes, CCC, etc.).
  *
- * We answer OPTIONS here and never proxy preflight to backends or Redis rate limit.
+ * <p>Do not use {@code spring.cloud.gateway.globalcors} — its CorsWebFilter can
+ * 403 OPTIONS before route filters run.
+ *
+ * <p>OPTIONS: answered here (no proxy / rate limit).
+ * Other methods: ensure a single ACAO on the response, including local
+ * {@code /actuator/**} (GlobalFilters do not run for Actuator).
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -23,11 +26,14 @@ public class OptionsCorsWebFilter implements WebFilter {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
-        if (exchange.getRequest().getMethod() != HttpMethod.OPTIONS) {
-            return chain.filter(exchange);
+        if (exchange.getRequest().getMethod() == HttpMethod.OPTIONS) {
+            GatewayCorsSupport.apply(exchange);
+            exchange.getResponse().setStatusCode(HttpStatus.NO_CONTENT);
+            return exchange.getResponse().setComplete();
         }
-        GatewayCorsSupport.apply(exchange);
-        exchange.getResponse().setStatusCode(HttpStatus.NO_CONTENT);
-        return exchange.getResponse().setComplete();
+
+        return chain.filter(exchange)
+                .doOnSuccess(v -> GatewayCorsSupport.apply(exchange))
+                .doOnError(e -> GatewayCorsSupport.apply(exchange));
     }
 }
