@@ -28,7 +28,11 @@ spring:
             redis-rate-limiter.replenishRate: ${byz.gateway.rate-limit.replenish-rate:40}
             redis-rate-limiter.burstCapacity: ${byz.gateway.rate-limit.burst-capacity:80}
             key-resolver: "#{@byzKeyResolver}"
+      # Preflight is handled by OptionsCorsGlobalFilter (avoids backend 403 + rate limit).
+      # Response CORS is normalized by DedupeCorsGlobalFilter (strips upstream duplicates).
+      # Keep globalcors as a safety net for non-OPTIONS responses.
       globalcors:
+        add-to-simple-url-handler-mapping: true
         cors-configurations:
           '[/**]':
             allowedOriginPatterns: "*"
