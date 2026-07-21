@@ -48,13 +48,23 @@ Browsers call `api.byzantineapp.dev/{service}/…` with `Authorization`. That re
 
 Instead:
 
-- `OptionsCorsWebFilter` — answers OPTIONS; also sets ACAO on **all** responses including local `/actuator/health` (needed for Admin System Health)
-- `DedupeCorsGlobalFilter` — strips upstream `Access-Control-*` on proxied routes and re-applies one gateway ACAO
-- YAML `DedupeResponseHeader` kept as a safety net
+- `OptionsCorsWebFilter` — answers OPTIONS; sets ACAO on local `/actuator/**` via `beforeCommit` (needed for Admin System Health — `doOnSuccess` is too late)
+- `DedupeCorsGlobalFilter` — strips upstream `Access-Control-*` on proxied routes and re-applies one gateway ACAO via `beforeCommit`
+- YAML `DedupeResponseHeader` + `RemoveRequestHeader=Expect` kept as safety nets
 
 After deploy, verify:
 
 ```bash
+# Admin System Health — GET must include ACAO (not just OPTIONS):
+curl -i 'https://api.byzantineapp.dev/actuator/health' \
+  -H 'Origin: https://admin.byzantineapp.dev'
+# Expect: 200 + Access-Control-Allow-Origin: https://admin.byzantineapp.dev
+
+# In-app create via gateway (should return 201, not curl 18):
+# curl -i -X POST 'https://api.byzantineapp.dev/notifications/api/v1/notifications/in-app' \
+#   -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+#   -d '{"userId":"...","title":"t","message":"m"}'
+
 curl -i -X OPTIONS 'https://api.byzantineapp.dev/notifications/api/v1/notifications' \
   -H 'Origin: https://claritasclassicalcommunity.org' \
   -H 'Access-Control-Request-Method: GET' \

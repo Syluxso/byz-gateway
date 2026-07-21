@@ -17,8 +17,10 @@ import reactor.core.publisher.Mono;
  * 403 OPTIONS before route filters run.
  *
  * <p>OPTIONS: answered here (no proxy / rate limit).
- * Other methods: ensure a single ACAO on the response, including local
- * {@code /actuator/**} (GlobalFilters do not run for Actuator).
+ * <p>Actuator: served by the gateway process itself — {@code GlobalFilter}s do
+ * not run, so CORS must be applied here via {@code beforeCommit}. Using
+ * {@code doOnSuccess} is too late (headers already sent) and leaves Admin
+ * System Health showing "API Gateway unreachable".
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -32,13 +34,13 @@ public class OptionsCorsWebFilter implements WebFilter {
             return exchange.getResponse().setComplete();
         }
 
-        // CORS for proxied responses is applied in DedupeCorsGlobalFilter.beforeCommit
-        // (strip upstream + single ACAO). Actuator bypasses GlobalFilters, so apply here.
         if (pathStartsWithActuator(exchange)) {
-            return chain.filter(exchange)
-                    .doOnSuccess(v -> GatewayCorsSupport.apply(exchange))
-                    .doOnError(e -> GatewayCorsSupport.apply(exchange));
+            exchange.getResponse().beforeCommit(() -> {
+                GatewayCorsSupport.apply(exchange);
+                return Mono.empty();
+            });
         }
+
         return chain.filter(exchange);
     }
 
