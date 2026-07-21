@@ -21,16 +21,22 @@ spring:
   cloud:
     gateway:
       default-filters:
-        # Backends also set CORS; without this the browser sees duplicate ACAO and blocks login.
+        # curl/Guzzle may send Expect: 100-continue; SCG historically mishandles it
+        # (connection closed mid-response / curl 18) while the direct host is fine.
+        - RemoveRequestHeader=Expect
+        # Backends also set CORS; without this the browser sees duplicate ACAO.
         - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials Access-Control-Expose-Headers Access-Control-Allow-Headers Access-Control-Allow-Methods Vary, RETAIN_FIRST
         - name: RequestRateLimiter
           args:
             redis-rate-limiter.replenishRate: ${byz.gateway.rate-limit.replenish-rate:40}
             redis-rate-limiter.burstCapacity: ${byz.gateway.rate-limit.burst-capacity:80}
             key-resolver: "#{@byzKeyResolver}"
-      # CORS: do NOT use spring.cloud.gateway.globalcors — it registers a CorsWebFilter
-      # that returns 403 on failed preflight before our filters run. OPTIONS are handled
-      # by OptionsCorsWebFilter; response ACAO is normalized by DedupeCorsGlobalFilter.
+      httpclient:
+        connect-timeout: 5000
+        response-timeout: 30s
+      # CORS: do NOT use spring.cloud.gateway.globalcors — its CorsWebFilter can
+      # 403 OPTIONS before route filters run. OPTIONS are handled by
+      # OptionsCorsWebFilter; response ACAO is normalized by DedupeCorsGlobalFilter.
       routes:
         - id: iam
           uri: ${BYZ_IAM_URI:http://127.0.0.1:8082}

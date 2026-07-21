@@ -32,8 +32,18 @@ public class OptionsCorsWebFilter implements WebFilter {
             return exchange.getResponse().setComplete();
         }
 
-        return chain.filter(exchange)
-                .doOnSuccess(v -> GatewayCorsSupport.apply(exchange))
-                .doOnError(e -> GatewayCorsSupport.apply(exchange));
+        // CORS for proxied responses is applied in DedupeCorsGlobalFilter.beforeCommit
+        // (strip upstream + single ACAO). Actuator bypasses GlobalFilters, so apply here.
+        if (pathStartsWithActuator(exchange)) {
+            return chain.filter(exchange)
+                    .doOnSuccess(v -> GatewayCorsSupport.apply(exchange))
+                    .doOnError(e -> GatewayCorsSupport.apply(exchange));
+        }
+        return chain.filter(exchange);
+    }
+
+    private static boolean pathStartsWithActuator(ServerWebExchange exchange) {
+        String path = exchange.getRequest().getURI().getRawPath();
+        return path != null && path.startsWith("/actuator");
     }
 }

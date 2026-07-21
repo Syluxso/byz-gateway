@@ -10,6 +10,10 @@ import org.springframework.web.server.ServerWebExchange;
  */
 final class GatewayCorsSupport {
 
+    /** Explicit list — browsers reject {@code *} with {@code Allow-Credentials: true}. */
+    private static final String ALLOW_HEADERS =
+            "Authorization, Content-Type, Accept, Origin, X-Requested-With, X-Request-Id";
+
     private GatewayCorsSupport() {}
 
     static void apply(ServerWebExchange exchange) {
@@ -19,28 +23,23 @@ final class GatewayCorsSupport {
 
         String origin = request.getHeaders().getOrigin();
         if (origin == null || origin.isBlank()) {
-            origin = "*";
+            // Non-browser / same-origin probes — no CORS headers needed.
+            return;
         }
 
-        // Clear any values already present (e.g. from a backend or globalcors).
-        headers.remove(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN);
-        headers.remove(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS);
-        headers.remove(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS);
-        headers.remove(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS);
-        headers.remove(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS);
-        headers.remove(HttpHeaders.ACCESS_CONTROL_MAX_AGE);
-        headers.remove(HttpHeaders.VARY);
+        stripUpstream(headers);
 
         headers.set(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, origin);
-        if (!"*".equals(origin)) {
-            headers.set(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true");
-            headers.set(HttpHeaders.VARY, HttpHeaders.ORIGIN);
-        }
+        headers.set(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS, "true");
+        headers.set(HttpHeaders.VARY, HttpHeaders.ORIGIN);
         headers.set(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS, "GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD");
 
         String reqHeaders = request.getHeaders().getFirst(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS);
-        headers.set(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS,
-                (reqHeaders != null && !reqHeaders.isBlank()) ? reqHeaders : "*");
+        if (reqHeaders != null && !reqHeaders.isBlank()) {
+            headers.set(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, reqHeaders);
+        } else {
+            headers.set(HttpHeaders.ACCESS_CONTROL_ALLOW_HEADERS, ALLOW_HEADERS);
+        }
         headers.set(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, "X-Request-Id");
         headers.set(HttpHeaders.ACCESS_CONTROL_MAX_AGE, "3600");
     }
