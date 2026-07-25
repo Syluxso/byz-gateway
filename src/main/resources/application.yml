@@ -81,6 +81,7 @@ byz:
     enabled: ${BYZ_KAFKA_ENABLED:true}
     topics:
       gateway-access: byz.gateway.access
+      api-usage: byz.api.usage
 
 management:
   endpoints:

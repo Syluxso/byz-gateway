@@ -1,5 +1,10 @@
 package com.nyberg.gateway.filter;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nyberg.gateway.auth.AccessJwtClaims;
+import com.nyberg.gateway.auth.ApiKeyJwtClaims;
+import com.nyberg.gateway.events.ApiUsageEvent;
+import com.nyberg.gateway.events.ApiUsageKafkaPublisher;
 import com.nyberg.gateway.events.GatewayAccessEvent;
 import com.nyberg.gateway.events.GatewayAccessKafkaPublisher;
 import org.springframework.beans.factory.ObjectProvider;
@@ -17,16 +22,24 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Emits a best-effort access event to Kafka after each proxied request completes.
+ * Emits best-effort Kafka facts after each proxied request completes.
  * Skips actuator to avoid health-check noise.
  */
 @Component
 public class AccessLogGlobalFilter implements GlobalFilter, Ordered {
 
-    private final ObjectProvider<GatewayAccessKafkaPublisher> publisher;
+    private final ObjectProvider<GatewayAccessKafkaPublisher> accessPublisher;
+    private final ObjectProvider<ApiUsageKafkaPublisher> usagePublisher;
+    private final ObjectMapper objectMapper;
 
-    public AccessLogGlobalFilter(ObjectProvider<GatewayAccessKafkaPublisher> publisher) {
-        this.publisher = publisher;
+    public AccessLogGlobalFilter(
+            ObjectProvider<GatewayAccessKafkaPublisher> accessPublisher,
+            ObjectProvider<ApiUsageKafkaPublisher> usagePublisher,
+            ObjectMapper objectMapper
+    ) {
+        this.accessPublisher = accessPublisher;
+        this.usagePublisher = usagePublisher;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -41,11 +54,6 @@ public class AccessLogGlobalFilter implements GlobalFilter, Ordered {
     }
 
     private void emit(ServerWebExchange exchange, long startedNanos) {
-        GatewayAccessKafkaPublisher kafka = publisher.getIfAvailable();
-        if (kafka == null) {
-            return;
-        }
-
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getURI().getRawPath();
         String requestId = exchange.getResponse().getHeaders().getFirst(RequestIdGlobalFilter.HEADER);
@@ -69,20 +77,59 @@ public class AccessLogGlobalFilter implements GlobalFilter, Ordered {
         }
 
         long durationMs = (System.nanoTime() - startedNanos) / 1_000_000L;
+        String method = request.getMethod() != null ? request.getMethod().name() : null;
+        String occurredAt = Instant.now().toString();
 
-        GatewayAccessEvent event = new GatewayAccessEvent(
+        String authorization = request.getHeaders().getFirst("Authorization");
+        AccessJwtClaims.Claims accessClaims = AccessJwtClaims.parse(objectMapper, authorization);
+        String organizationId = accessClaims != null ? accessClaims.organizationId() : null;
+        String clientId = accessClaims != null ? accessClaims.clientId() : null;
+
+        GatewayAccessKafkaPublisher accessKafka = accessPublisher.getIfAvailable();
+        if (accessKafka != null) {
+            GatewayAccessEvent access = new GatewayAccessEvent(
+                    UUID.randomUUID().toString(),
+                    GatewayAccessEvent.TYPE,
+                    occurredAt,
+                    requestId,
+                    method,
+                    path,
+                    statusCode,
+                    durationMs,
+                    clientIp,
+                    routeId,
+                    organizationId,
+                    clientId
+            );
+            accessKafka.publishAsync(access);
+        }
+
+        ApiUsageKafkaPublisher usageKafka = usagePublisher.getIfAvailable();
+        if (usageKafka == null) {
+            return;
+        }
+
+        ApiKeyJwtClaims.ApiKeyClaims apiKey = ApiKeyJwtClaims.parseIfApiKey(objectMapper, authorization);
+        if (apiKey == null) {
+            return;
+        }
+
+        ApiUsageEvent usage = new ApiUsageEvent(
                 UUID.randomUUID().toString(),
-                GatewayAccessEvent.TYPE,
-                Instant.now().toString(),
-                requestId,
-                request.getMethod() != null ? request.getMethod().name() : null,
+                ApiUsageEvent.TYPE,
+                occurredAt,
+                apiKey.organizationId(),
+                apiKey.tokenId(),
+                apiKey.appId(),
+                apiKey.grantType(),
+                apiKey.userId(),
+                apiKey.tenantId(),
+                method,
                 path,
                 statusCode,
-                durationMs,
-                clientIp,
-                routeId
+                durationMs
         );
-        kafka.publishAsync(event);
+        usageKafka.publishAsync(usage);
     }
 
     @Override

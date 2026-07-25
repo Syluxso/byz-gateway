@@ -1,4 +1,6 @@
-# byz-gateway
+# byz-gateway (Java — superseded)
+
+> **Production replacement:** use the Go service [`../byz-api-gateway`](../byz-api-gateway). Same port `8096` / `api.byzantineapp.dev`, Redis rate limit, routes, CORS, and Kafka access/usage events — far less RAM.
 
 Lightweight edge for Byzantine: **path routing**, **X-Request-Id**, **Redis rate limit**, **Kafka access events**.
 JWT validation stays on each backend service.
@@ -75,9 +77,16 @@ Expect **204** and a **single** `Access-Control-Allow-Origin` matching the Origi
 
 ## Kafka access events
 
-After each proxied request (not `/actuator/**`), the gateway best-effort publishes `gateway.request.completed` to topic **`byz.gateway.access`** (key = `X-Request-Id`). Failures are logged at debug and never fail the HTTP response.
+After each proxied request (not `/actuator/**`), the gateway best-effort publishes:
 
-Env: `KAFKA_BOOTSTRAP`, `BYZ_KAFKA_ENABLED` (set `false` if the broker is down). Create the topic via events-service bootstrap (`POST /api/v1/topics/bootstrap`) — do not rely on auto-create in prod.
+| Topic | Type | When | Key |
+|-------|------|------|-----|
+| `byz.gateway.access` | `gateway.request.completed` | every proxied request | `X-Request-Id` |
+| `byz.api.usage` | `api.request` | Bearer JWT with `grant_type` = `user_api_key` \| `tenant_api_key` | `tokenId` |
+
+Raw `byz_sk_…` secrets are not metered here (resolve to a JWT first). Failures are logged at debug and never fail the HTTP response.
+
+Env: `KAFKA_BOOTSTRAP`, `BYZ_KAFKA_ENABLED` (set `false` if the broker is down). Create topics on Kafka before relying on them in prod (events-service bootstrap or manual).
 
 Contract: `projects/events-service/docs/EVENTS.md`.
 
